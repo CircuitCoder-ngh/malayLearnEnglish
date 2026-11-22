@@ -150,6 +150,9 @@ body.in-session #app { padding-bottom: 24px; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); display: grid; gap: 12px; align-content: start; min-width: 0; }
 .grid-2 { display: grid; gap: 16px; }
 @media (min-width: 680px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
+.grid-3 { display: grid; gap: 16px; }
+@media (min-width: 680px) { .grid-3 { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 880px) { .grid-3 { grid-template-columns: repeat(3, 1fr); } }
 .foot { text-align: center; padding: 8px; }
 
 /* ---------- buttons ---------- */
@@ -177,6 +180,10 @@ body.in-session #app { padding-bottom: 24px; }
 .audio-btn { display: none; align-items: center; justify-content: center; width: 32px; height: 32px; flex: none; border-radius: 50%; border: 0; background: var(--primary-soft); color: var(--primary); vertical-align: middle; margin-left: 8px; }
 .has-voice .audio-btn { display: inline-flex; }
 .audio-btn:hover { background: var(--primary); color: var(--primary-ink); }
+.audio-btn.busy { animation: audio-wait 0.9s ease-in-out infinite; }
+.audio-btn.playing { background: var(--primary); color: var(--primary-ink); }
+@keyframes audio-wait { 50% { opacity: .45; } }
+.toast { position: fixed; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 50; width: max-content; max-width: min(520px, calc(100vw - 32px)); padding: 12px 16px; border-radius: 12px; background: var(--ink); color: var(--bg); font-size: .92rem; box-shadow: 0 8px 30px rgba(0, 0, 0, .3); }
 .audio-btn.lg { width: 44px; height: 44px; }
 .audio-btn.xl { width: 84px; height: 84px; margin: 0; }
 

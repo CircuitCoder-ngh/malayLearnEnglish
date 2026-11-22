@@ -3,7 +3,7 @@
 import { h, svg, dayNumber, dayLabel, norm } from './util.js';
 import { get, save, settings, setSetting, onSetting, today, streak, exportData, importData, reset } from './store.js';
 import { statusOf, STATUS_LABEL } from './srs.js';
-import { speak, onVoices, availableVoices, currentVoice, hasVoice, selectVoice } from './speech.js';
+import { speak, onVoices, availableVoices, currentVoice, hasVoice, voiceIsOnline, selectVoice } from './speech.js';
 import { WORDS, TOTAL, UNITS, UNIT_SIZE, posLabel, counts, coverage, readableSentences } from './vocab.js';
 import { LESSONS } from './data/grammar.js';
 import { runSession, plan } from './session.js';
@@ -135,6 +135,7 @@ function homeView() {
         h('div', { class: 'actions wrap start' },
           p.remainingNew ? h('a', { class: 'btn primary', href: '#/learn?mode=more&n=5' }, 'Belajar 5 perkataan lagi') : null,
           sentenceCount >= 4 ? h('a', { class: 'btn', href: '#/learn?mode=sentences' }, 'Latihan ayat') : null,
+          c.learned >= 4 ? h('a', { class: 'btn', href: '#/learn?mode=dictation' }, 'Latihan imlak') : null,
         ),
       ],
   );
@@ -151,7 +152,7 @@ function homeView() {
     ),
   );
 
-  const side = h('div', { class: 'grid-2' },
+  const side = h('div', { class: 'grid-3' },
     h('a', { class: 'card link-card', href: sentenceCount >= 4 ? '#/learn?mode=sentences' : '#/words' },
       h('div', { class: 'kicker' }, 'Ayat'),
       h('h3', null, sentenceCount ? `${num(sentenceCount)} ayat yang anda boleh baca` : 'Ayat dibuka semasa anda belajar'),
@@ -163,6 +164,11 @@ function homeView() {
         h('h3', null, rich(nextLesson.title)),
         h('p', { class: 'muted small' }, rich(nextLesson.blurb)))
       : h('a', { class: 'card link-card', href: '#/grammar' }, h('div', { class: 'kicker' }, 'Tatabahasa'), h('h3', null, 'Semua pelajaran selesai'), h('p', { class: 'muted small' }, 'Baca semula mana-mana pelajaran pada bila-bila masa.')),
+    h('a', { class: 'card link-card', href: c.learned >= 4 ? '#/learn?mode=dictation' : '#/learn' },
+      h('div', { class: 'kicker' }, 'Imlak'),
+      h('h3', null, c.learned >= 4 ? 'Dengar dan taip' : 'Imlak dibuka selepas sesi pertama'),
+      h('p', { class: 'muted small' }, 'Dengar perkataan yang sudah anda pelajari dan eja dengan betul. Ejaan bahasa Inggeris tidak mengikut bunyi, jadi ini latihan yang penting.'),
+    ),
   );
 
   app.replaceChildren(h('div', { class: 'page home' },
@@ -471,11 +477,11 @@ function settingsView() {
   const paintVoice = () => {
     const voices = availableVoices();
     const msg = hasVoice()
-      ? 'Pilih loghat yang anda suka, contohnya British (en-GB) atau Amerika (en-US).'
-      : 'Pelayar ini tiada suara bahasa Inggeris, jadi audio dan latihan mendengar disembunyikan.';
+      ? 'Pilih loghat yang anda suka, contohnya British (en-GB) atau Amerika (en-US).' + (voiceIsOnline() ? ' Suara ini distrim dari internet, jadi ia boleh lambat atau senyap jika sambungan lemah. Suara bertanda “pada peranti ini” lebih boleh diharap.' : '')
+      : 'Pelayar ini tiada suara bahasa Inggeris, jadi audio, latihan mendengar dan imlak tidak tersedia. Cuba Chrome, Edge atau Safari, atau pasang suara bahasa Inggeris dalam tetapan peranti anda.';
     voiceRow.replaceChildren(
       row('Suara', msg, voices.length
-        ? h('select', { 'aria-label': 'Suara', onchange: (e) => setSetting('voiceURI', e.target.value) }, voices.map((v) => h('option', { value: v.voiceURI, selected: currentVoice() === v }, `${v.name} (${v.lang})`)))
+        ? h('select', { 'aria-label': 'Suara', onchange: (e) => setSetting('voiceURI', e.target.value) }, voices.map((v) => h('option', { value: v.voiceURI, selected: currentVoice() === v }, `${v.name} (${v.lang}) · ${v.localService ? 'pada peranti ini' : 'perlu internet'}`)))
         : h('span', { class: 'muted small' }, 'Tidak tersedia')),
       hasVoice() ? row('Uji', null, h('button', { class: 'btn', onclick: () => speak('Hello! How are you today?') }, 'Mainkan contoh')) : null,
     );

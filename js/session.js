@@ -32,6 +32,12 @@ export function plan() {
 function buildQueue(kind, opts) {
   const st = get();
   if (kind === 'sentences') return sentenceItems(opts.count || 8, new Set(), true);
+  if (kind === 'dictation') {
+    // Extra spelling practice on words already learned. It does not change their schedule.
+    if (!canListen()) return [];
+    const learned = WORDS.filter((w) => st.words[w.word]?.i > 0 && !w.word.includes(' '));
+    return shuffle(learned).slice(0, opts.count || 10).map((w) => ({ type: 'practice', kind: 'dictation', w }));
+  }
 
   const p = plan();
   const fresh = kind === 'more' ? nextNewWords(opts.count || 5) : p.fresh;
@@ -97,8 +103,14 @@ function clozeParts(w) {
 
 export function runSession(root, kind = 'daily', opts = {}, onExit) {
   const st = get();
+  // Browsers load their voices a moment after the page: give them a chance before deciding there are none.
+  if (kind === 'dictation' && !canListen() && settings().audio && !opts.waited) {
+    root.replaceChildren(h('div', { class: 'session' }, h('div', { class: 'card summary' }, h('p', { class: 'muted' }, 'Memuatkan suara…'))));
+    setTimeout(() => { if (root.isConnected && location.hash.includes('dictation')) runSession(root, kind, { ...opts, waited: true }, onExit); }, 900);
+    return;
+  }
   const queue = buildQueue(kind, opts);
-  const stats = { answers: 0, correct: 0, learned: [], reviewed: 0, sentences: 0, sentencesOk: 0, started: Date.now() };
+  const stats = { answers: 0, correct: 0, learned: [], reviewed: 0, practised: 0, sentences: 0, sentencesOk: 0, started: Date.now() };
   const touched = new Set();
   let total = queue.reduce((n, it) => n + unitsOf(it), 0);
   let done = 0;
@@ -214,11 +226,15 @@ export function runSession(root, kind = 'daily', opts = {}, onExit) {
       return typing ? 'type' : cloze ? 'cloze-mcq' : 'mcq-to-english';
     }
     const opts = [];
-    if (ws.i < 3) opts.push('mcq-to-malay', 'mcq-to-english');
-    else if (ws.i < 7) {
+    if (ws.i < 3) {
+      opts.push('mcq-to-malay', 'mcq-to-english');
+      if (listen) opts.push('listen-mcq');
+      if (listen && typing) opts.push('dictation');
+    } else if (ws.i < 7) {
       opts.push('mcq-to-english');
       if (cloze) opts.push('cloze-mcq');
       if (listen) opts.push('listen-mcq');
+      if (listen && typing) opts.push('dictation');
     } else if (typing) {
       opts.push('type', 'type');
       if (cloze) opts.push('cloze-type');
@@ -233,8 +249,8 @@ export function runSession(root, kind = 'daily', opts = {}, onExit) {
 
   function quiz(item) {
     const { w } = item;
-    const kind = chooseKind(item);
-    const label = item.type === 'review' ? 'Ulang kaji' : item.type === 'relearn' ? 'Sekali lagi' : 'Belajar';
+    const kind = item.kind || chooseKind(item);
+    const label = item.type === 'practice' ? 'Imlak' : item.type === 'review' ? 'Ulang kaji' : item.type === 'relearn' ? 'Sekali lagi' : 'Belajar';
     let answered = false;
 
     const resolve = (correct, note) => {
@@ -257,6 +273,10 @@ export function runSession(root, kind = 'daily', opts = {}, onExit) {
         } else {
           requeue({ type: 'learn', w, step: item.step }, 3);
         }
+      } else if (item.type === 'practice') {
+        done++;
+        stats.practised++;
+        if (!correct && !item.retry) { requeue({ ...item, retry: true }, 3); total++; }
       } else if (item.type === 'review') {
         done++;
         stats.reviewed++;
@@ -501,9 +521,11 @@ export function runSession(root, kind = 'daily', opts = {}, onExit) {
     const acc = stats.answers ? Math.round((stats.correct / stats.answers) * 100) : null;
     const p = plan();
     const moreToday = p.learning.length + p.due.length + p.fresh.length;
+    const extraOnly = kind === 'dictation' || kind === 'sentences';
     const tiles = [
-      [stats.learned.length, 'perkataan baharu dipelajari'],
-      [stats.reviewed, 'perkataan diulang kaji'],
+      extraOnly ? null : [stats.learned.length, 'perkataan baharu dipelajari'],
+      extraOnly ? null : [stats.reviewed, 'perkataan diulang kaji'],
+      stats.practised ? [stats.practised, 'perkataan dieja'] : null,
       stats.sentences ? [`${stats.sentencesOk}/${stats.sentences}`, 'ayat betul'] : null,
       acc != null ? [`${acc}%`, 'ketepatan'] : null,
       [mins, 'minit'],
@@ -516,7 +538,9 @@ export function runSession(root, kind = 'daily', opts = {}, onExit) {
         ? 'Semua jawapan anda telah disimpan. Perkataan yang masih dipelajari akan muncul dahulu pada sesi seterusnya.'
         : stats.learned.length
           ? 'Anda akan bertemu perkataan ini lagi esok, kemudian pada selang masa yang semakin panjang, tepat sebelum anda terlupa.'
-          : 'Setiap perkataan kini menunggu sehingga tepat sebelum anda terlupa.'),
+          : extraOnly
+            ? 'Latihan tambahan ini tidak mengubah jadual ulang kaji anda.'
+            : 'Setiap perkataan kini menunggu sehingga tepat sebelum anda terlupa.'),
       h('div', { class: 'stat-row' }, tiles.map(([n, l]) => h('div', { class: 'stat' }, h('div', { class: 'stat-n' }, String(n)), h('div', { class: 'stat-l' }, l)))),
       stats.learned.length ? h('div', { class: 'learned-list' }, stats.learned.map((w) => h('span', { class: 'chip' }, h('b', { lang: 'en' }, w.word), ` ${w.gloss[0]}`))) : null,
       h('div', { class: 'actions wrap' },
@@ -524,6 +548,7 @@ export function runSession(root, kind = 'daily', opts = {}, onExit) {
         moreToday ? h('button', { class: 'btn primary', onclick: () => runSession(root, 'daily', {}, onExit) }, early ? 'Sambung semula' : 'Teruskan belajar') : null,
         !moreToday && p.remainingNew ? h('button', { class: 'btn', onclick: () => runSession(root, 'more', { count: 5 }, onExit) }, 'Belajar 5 perkataan lagi') : null,
         !moreToday && readableSentences({ maxGap: 1 }).length >= 4 ? h('button', { class: 'btn', onclick: () => runSession(root, 'sentences', {}, onExit) }, 'Latihan ayat') : null,
+        kind === 'dictation' ? h('button', { class: 'btn', onclick: () => runSession(root, 'dictation', {}, onExit) }, 'Imlak lagi') : null,
       ),
     ));
   }
@@ -531,10 +556,16 @@ export function runSession(root, kind = 'daily', opts = {}, onExit) {
   if (!queue.length) {
     cleanup();
     stage.replaceChildren(h('div', { class: 'card summary' },
-      h('h1', null, kind === 'sentences' ? 'Belum ada ayat' : 'Semua sudah selesai'),
+      h('h1', null, kind === 'sentences' ? 'Belum ada ayat' : kind === 'dictation' ? (canListen() ? 'Belum ada perkataan' : 'Tiada suara bahasa Inggeris') : 'Semua sudah selesai'),
       h('p', { class: 'muted' }, kind === 'sentences'
         ? 'Belajar beberapa perkataan lagi dahulu. Ayat dibuka sebaik sahaja anda tahu setiap perkataan di dalamnya.'
-        : 'Tiada apa-apa yang perlu diulang kaji sekarang. Kembali esok, atau belajar beberapa perkataan tambahan.'),
+        : kind === 'dictation'
+          ? (canListen()
+            ? 'Siapkan sesi pertama anda dahulu. Imlak menggunakan perkataan yang sudah anda pelajari.'
+            : settings().audio
+              ? 'Pelayar ini tidak mempunyai suara bahasa Inggeris, jadi perkataan tidak dapat dibacakan. Cuba Chrome, Edge atau Safari, atau pasang suara bahasa Inggeris dalam tetapan teks-ke-pertuturan peranti anda.'
+              : 'Audio dimatikan. Hidupkannya dalam Tetapan untuk menggunakan latihan imlak.')
+          : 'Tiada apa-apa yang perlu diulang kaji sekarang. Kembali esok, atau belajar beberapa perkataan tambahan.'),
       h('div', { class: 'actions' }, h('button', { class: 'btn primary', onclick: onExit }, 'Kembali ke laman utama')),
     ));
     return;
